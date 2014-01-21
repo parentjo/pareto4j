@@ -25,10 +25,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.logging.FileHandler;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.logging.SimpleFormatter;
+import java.util.logging.*;
 
 import static org.pareto4j.inspector.collections.State.ALIVE;
 import static org.pareto4j.inspector.collections.State.DEAD;
@@ -75,13 +72,16 @@ public class CollectionTracker {
     final Object lock = new Object();
 
     public CollectionTracker() {
-        try {
-            FileHandler fh = new FileHandler("collections_log.%u.%g.txt", 50 * 1024 * 1024, 10, false);
-            fh.setFormatter(new SimpleFormatter());
-            logger.addHandler(fh);
+        Handler[] handlers = logger.getHandlers();
+        if (handlers != null && handlers.length == 0) {
+            try {
+                FileHandler fh = new FileHandler("pareto4j_log.%u.%g.txt", 50 * 1024 * 1024, 10, false);
+                fh.setFormatter(new SimpleFormatter());
+                logger.addHandler(fh);
 
-        } catch (IOException e) {
-            e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+            } catch (IOException e) {
+                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+            }
         }
 
         setup();
@@ -151,7 +151,17 @@ public class CollectionTracker {
     }
 
     private void log(String msg) {
-        logger.log(Level.INFO, msg);
+        //
+        // HACK ALERT
+        //
+        // java.util.Logger uses a shutdowwnhook, so when we call
+        // log (indirectly) from within 'our' shutdownhook then we
+        // see nothing :(
+        //
+        if (logger.getHandlers().length == 0)
+            System.err.println(msg);
+        else
+            logger.log(Level.INFO, msg);
     }
 
 
@@ -470,7 +480,7 @@ public class CollectionTracker {
             cumulate += percentage;
             if (cumulate > 80.f) {
                 log("Covering more than " + String.format("%.1f%%", cumulate) + " of all instances with + " +
-                        String.format("%.1f%%", (100.f * count / all.size())) + " of the sites , rest (" + (all.size() - count) + " of " + all.size() + " not shown!");
+                        String.format("%.1f%%", (100.f * count / all.size())) + " of the sites , rest (" + (all.size() - count) + " of " + all.size() + " not shown!)");
                 break;
             }
         }

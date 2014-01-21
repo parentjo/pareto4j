@@ -58,8 +58,8 @@ public class CollectionsData implements CollectionsDataMBean {
     }
 
     private void registerMBean() throws MBeanRegistrationException, NotCompliantMBeanException, MalformedObjectNameException, InstanceAlreadyExistsException {
-        registerMBean(this, "Phast:Module=Pareto,type=Inspect,name=Details", 5);
-        registerMBean(new ParetoStatisticsMBean(), "Pareto4j:Module=Inspect,name=Overview", 5);
+        registerMBean(this, "Pareto4j:Module=Inspector,name=Details", 5);
+        registerMBean(new ParetoStatisticsMBean(), "Pareto4j:Module=Inspector,name=Overview", 5);
     }
 
     private void registerMBean(Object mbean, String name, long attempts) throws MBeanRegistrationException, NotCompliantMBeanException, MalformedObjectNameException, InstanceAlreadyExistsException {

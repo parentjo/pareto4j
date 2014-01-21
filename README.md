@@ -6,7 +6,7 @@
 ----------------------------
 
 Allocating Lists, Maps or Sets to store no or a single value is wasteful in terms of memory.
-Furthermore one can sometimes observer a very biased use of the Collections API. For instance a small fraction of
+Furthermore one can sometimes observe a very biased use of the Collections API. For instance a small fraction of
 the code will allocate most of the instances. Or most of the Collections instances will store few value why a few store
 all the rest.
 

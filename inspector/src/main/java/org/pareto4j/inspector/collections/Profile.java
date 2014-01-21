@@ -28,7 +28,7 @@ import java.util.Set;
  */
 public class Profile {
     static final Set<DelegateTypes> modify = EnumSet.noneOf(DelegateTypes.class);
-    static final boolean fullStacktrace = System.getProperty("fullStacktrace") != null;
+    static final boolean fullStacktrace = System.getProperty("inspector.fullStacktrace") != null;
     static {
         for (DelegateTypes delegateTypes : DelegateTypes.values()) {
             if (System.getProperty("skip"+delegateTypes.name()) == null) {

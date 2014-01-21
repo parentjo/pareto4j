@@ -77,6 +77,19 @@ public class ParetoStatisticsMBean implements DynamicMBean {
      */
     public final CollectionTracker tracker = CollectionTracker.COLLECTION_TRACKER;
 
+    public ParetoStatisticsMBean() {
+        //
+        if (System.getProperty("inspector.dumpOnExit") != null) {
+            Runtime.getRuntime().addShutdownHook(new Thread() {
+                @Override
+                public void run() {
+                    System.err.println("Dump information");
+                    dumpAllocationSummary(org.pareto4j.inspector.collections.State.DEAD);
+                }
+            });
+        }
+
+    }
 
     public Object getAttribute(String attribute) throws AttributeNotFoundException, MBeanException, ReflectionException {
         DelegateTypes type = null;

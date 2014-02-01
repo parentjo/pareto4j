@@ -20,6 +20,8 @@ import java.io.PrintWriter;
 import java.io.Serializable;
 import java.io.StringWriter;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Created with IntelliJ IDEA.
@@ -29,18 +31,47 @@ import java.util.Arrays;
  * To change this template use File | Settings | File Templates.
  */
 public class Location implements Comparable<Location>, Serializable {
-    public static final Location OTHERS = new Location(new Where());
+    public static final int SZ = 1000;
+    public static final Map<Where, Location> cache = new LinkedHashMap<Where, Location>(SZ) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Where, Location> eldest) {
+            return size() > SZ;
+        }
+    };
+
+    public static final Location OTHERS = Location.create(new Where());
 
     boolean needCompute = true;
     int hash;
     StackTraceElement owner = null;
+    /**
+     * Used by compareTo
+     */
+    String ownerString;
     Where where;
 
-    public Location(Where where) {
+    /**
+     * Returns existing Location instances if possible
+     *
+     * @param w
+     * @return
+     */
+    public static Location create(Where w) {
+        Location l = cache.get(w);
+        if (l == null) {
+            l = new Location(w);
+            cache.put(w, l);
+        }
+
+        return l;
+    }
+
+    private Location(Where where) {
         if (Profile.fullStacktrace)
             this.where = where;
 
         owner = where.getStackTrace()[1];
+        ownerString = owner.toString();
     }
 
     public StackTraceElement getOwner() {
@@ -54,8 +85,10 @@ public class Location implements Comparable<Location>, Serializable {
 
         Location that = (Location) o;
 
-        if (Profile.fullStacktrace)
+        if (Profile.fullStacktrace) {
+            if (where == that.where) return true;
             return Arrays.equals(where.getStackTrace(), that.where.getStackTrace());
+        }
 
         return getOwner().equals(that.getOwner());
     }
@@ -70,14 +103,14 @@ public class Location implements Comparable<Location>, Serializable {
     }
 
     public int compareTo(Location o) {
-        return getOwner().toString().compareTo(o.getOwner().toString());
+        return ownerString.compareTo(o.ownerString);
     }
 
     public String toString() {
         if (Profile.fullStacktrace)
             return toString(where);
 
-        return getOwner().toString();
+        return ownerString;
     }
 
     String toString(Where e) {

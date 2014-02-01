@@ -23,20 +23,12 @@ package org.pareto4j.inspector.collections;
  * Time: 10:06
  * To change this template use File | Settings | File Templates.
  */
-public class Info implements Comparable<Info> {
+public class Info extends Statistics implements Comparable<Info> {
 
     final Location location;
 
-    /**
-     * Number of count at that location
-     */
-    int count = 0;
     StackTraceElement owner = null;
 
-    /**
-     * Sum of the sizes of the data structure(s) created that this location
-     */
-    int total;
 
     Info(Location location) {
         this.location = location;
@@ -57,8 +49,8 @@ public class Info implements Comparable<Info> {
     }
 
     public int compareTo(Info o) {
-        int d = count - o.count;
-        return d == 0 ? d : (d >= 1 ? 1 : -1);
+        long d = count - o.count;
+        return d == 0 ? 0 : (d >= 1 ? 1 : -1);
     }
 
     @Override
@@ -68,7 +60,7 @@ public class Info implements Comparable<Info> {
 
         Info info = (Info) o;
 
-        if (total != info.total) return false;
+        if (totalSize != info.totalSize) return false;
         if (count != info.count) return false;
         if (getLocationInformation() != null ? !getLocationInformation().equals(info.getLocationInformation()) : info.getLocationInformation() != null)
             return false;
@@ -79,8 +71,8 @@ public class Info implements Comparable<Info> {
     @Override
     public int hashCode() {
         int result = getLocationInformation() != null ? getLocationInformation().hashCode() : 0;
-        result = 31 * result + count;
-        result = 31 * result + total;
+        result = (int) (31 * result + count);
+        result = (int) (31 * result + totalSize);
         return result;
     }
 
@@ -89,7 +81,7 @@ public class Info implements Comparable<Info> {
         return "Info{" +
                 "location=" + getLocationInformation() +
                 ", count=" + count +
-                ", total=" + total +
+                ", totalSize=" + totalSize +
                 '}';
     }
 }

@@ -30,6 +30,9 @@ public class Statistics {
     public long count = 0;
     public long totalCapacity = 0;
     public long totalSize = 0;
+    public double averageSize = 0;
+    public double s_n = 0; // s_n = count * varianceSize^2
+    public double varianceSize = 0;
     public long smallInstances = 0;
 
     public void reset() {
@@ -38,6 +41,28 @@ public class Statistics {
         totalCapacity = 0;
         totalSize = 0;
         smallInstances = 0;
+    }
+
+    public void add(long sz) {
+        add(sz, 1);
+    }
+
+    void add(long sz, int ncount) {
+        totalSize += sz;
+        count += ncount;
+        double oldAverageSize = averageSize;
+        //
+        double delta = (sz - averageSize);
+        averageSize += delta / count;
+        s_n += (sz - oldAverageSize) * (sz - averageSize);
+
+        varianceSize = s_n / count;
+        largestSize = Math.max(sz, largestSize);
+    }
+
+    void merge(Statistics a) {
+        add(a.totalSize);
+        totalSize += a.totalSize;
     }
 
 }

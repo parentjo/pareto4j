@@ -29,6 +29,7 @@ import java.util.List;
  */
 public class ParetoStatisticsMBean implements DynamicMBean {
     private enum Attrib {
+        AverageSize("Alive vs dead average size disitribution", State.DEAD),
         StateDistribution("Alive vs dead instance disitribution", State.DEAD),
         SizeDistributionDead("Small vs not small disitribution", State.DEAD),
         SizeDistributionAlive("Small vs not small disitribution", State.ALIVE),
@@ -68,7 +69,7 @@ public class ParetoStatisticsMBean implements DynamicMBean {
     }
 
     Operation[] siteOperations = new Operation[]{
-            Operation.DumpByAllocationSiteAlive, Operation.DumpByAllocationSiteAll
+            Operation.DumpByAllocationSiteAlive, Operation.DumpByAllocationSiteAll, Operation.DumpSummary
     };
 
     /**
@@ -104,6 +105,9 @@ public class ParetoStatisticsMBean implements DynamicMBean {
             String attribLabel = attribute.substring(type.simpleName.length());
             Attrib attrib = Attrib.valueOf(attribLabel);
             switch (attrib) {
+                case AverageSize:
+                    return tracker.getAverageDistribution(type);
+
                 case SizeDistributionAlive:
                 case SizeDistributionDead:
                     return tracker.getSizeDistribution(type, attrib.state);
@@ -218,7 +222,7 @@ public class ParetoStatisticsMBean implements DynamicMBean {
                         // String name String description, MBeanParameterInfo[] signature, String type,int impact
                         new MBeanOperationInfo(
                                 delegateTypes.simpleName + operation.name(), operation.description,
-                                new MBeanParameterInfo[0], "java/lang/Void", MBeanOperationInfo.INFO
+                                new MBeanParameterInfo[0], "void", MBeanOperationInfo.INFO
                         )
                 );
             }
@@ -234,7 +238,7 @@ public class ParetoStatisticsMBean implements DynamicMBean {
                         // String name String description, MBeanParameterInfo[] signature, String type,int impact
                         new MBeanOperationInfo(
                                 operation.name(), operation.description,
-                                new MBeanParameterInfo[0], "java/lang/Void", MBeanOperationInfo.INFO
+                                new MBeanParameterInfo[0], "void", MBeanOperationInfo.INFO
                         )
                 );
             }

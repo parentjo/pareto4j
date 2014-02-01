@@ -58,8 +58,9 @@ public class CollectionsData implements CollectionsDataMBean {
     }
 
     private void registerMBean() throws MBeanRegistrationException, NotCompliantMBeanException, MalformedObjectNameException, InstanceAlreadyExistsException {
-        registerMBean(this, "Pareto4j:Module=Inspector,name=Details", 5);
+//        registerMBean(this, "Pareto4j:Module=Inspector,name=Details", 5);
         registerMBean(new ParetoStatisticsMBean(), "Pareto4j:Module=Inspector,name=Overview", 5);
+        registerMBean(new DetailStatisticsMBean(), "Pareto4j:Module=Inspector,name=Details", 5);
     }
 
     private void registerMBean(Object mbean, String name, long attempts) throws MBeanRegistrationException, NotCompliantMBeanException, MalformedObjectNameException, InstanceAlreadyExistsException {
@@ -414,11 +415,4 @@ public class CollectionsData implements CollectionsDataMBean {
 
     // - HELPERS ---------------------------
 
-    private double getDeadAverage(DelegateTypes delegateTypes) {
-        return tracker.getTotalSize(delegateTypes) * 1.0 / tracker.getCount(delegateTypes);
-    }
-
-    private double getDeadAverageContent(DelegateTypes delegateTypes) {
-        return tracker.getTotalContentSize(delegateTypes) * 1.0 / tracker.getCount(delegateTypes);
-    }
 }

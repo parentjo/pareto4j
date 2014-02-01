@@ -16,13 +16,11 @@
 
 package org.pareto4j.inspector.collections;
 
-import java.io.IOException;
-import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
+import java.text.NumberFormat;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.*;
@@ -64,12 +62,12 @@ public class CollectionTracker {
     /**
      * Live instances. Maps from a Reference to the actual backing instance
      */
-    private Map<DelegateTypes, Map<Reference, Object>> liveInstancesMap =
-            new EnumMap<DelegateTypes, Map<Reference, Object>>(DelegateTypes.class);
+    private Map<DelegateTypes, Holder> liveInstancesMap =
+            new EnumMap<DelegateTypes, Holder>(DelegateTypes.class);
 
     final BlockingQueue<Wrapper> registerQueue = new LinkedBlockingQueue<Wrapper>();
 
-    final Object lock = new Object();
+    final NumberFormat nf = NumberFormat.getInstance();
 
     public CollectionTracker() {
         Handler[] handlers = logger.getHandlers();
@@ -79,8 +77,9 @@ public class CollectionTracker {
                 fh.setFormatter(new SimpleFormatter());
                 logger.addHandler(fh);
 
-            } catch (IOException e) {
-                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+            } catch (Exception e) {
+                e.printStackTrace();
+                throw new RuntimeException(e);
             }
         }
 
@@ -91,12 +90,16 @@ public class CollectionTracker {
         //
         for (final DelegateTypes delegateTypes : DelegateTypes.values()) {
             queueMap.put(delegateTypes, new ReferenceQueue<Wrapper>());
-            liveInstancesMap.put(delegateTypes, new TreeMap<Reference, Object>());
+            liveInstancesMap.put(delegateTypes, new Holder(delegateTypes.name()));
             allocationsMap.put(delegateTypes, new TreeMap<Location, Info>());
             deadStatistics.put(delegateTypes, new Statistics());
             start(new Runnable() {
                 public void run() {
-                    collect(delegateTypes, queueMap.get(delegateTypes), liveInstancesMap.get(delegateTypes));
+                    try {
+                        collectDeadInstances(delegateTypes, queueMap.get(delegateTypes), liveInstancesMap.get(delegateTypes));
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
                 }
             }, delegateTypes.name() + "Tracker");
         }
@@ -126,26 +129,15 @@ public class CollectionTracker {
      * @param q
      * @param liveInstances
      */
-    private void collect(DelegateTypes delegateTypes, ReferenceQueue<Wrapper> q, Map<Reference, Object> liveInstances) {
-
+    private void collectDeadInstances(DelegateTypes delegateTypes, ReferenceQueue q, Holder liveInstances) throws InterruptedException {
         while (true) {
-            Reference<? extends Wrapper> death = null;
-            try {
-                death = q.remove(); //
-                if (death != null) {
-                    Object tracked;
-                    synchronized (liveInstances) {
-                        tracked = liveInstances.remove(death);
-                    }
-                    if (tracked != null) {
-                        updateDeadStatistics(delegateTypes, tracked);
-                    } else
-                        log("Missed an already death " + delegateTypes.name());
+            ComparableWeakReference death = (ComparableWeakReference) q.remove(); //
+            if (death != null) {
+                Object tracked;
+                synchronized (liveInstances) {
+                    tracked = liveInstances.remove(death);
                 }
-            } catch (InterruptedException e) {
-                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
-            } catch (Throwable t) {
-                t.printStackTrace();
+                updateDeadStatistics(delegateTypes, tracked, death.location);
             }
         }
     }
@@ -192,87 +184,94 @@ public class CollectionTracker {
      * @param w
      */
     public void process(Wrapper<?> w) {
-
         // Queue for this type
         ReferenceQueue<Wrapper> q = queueMap.get(w.getType());
-        Map<Reference, Object> refs = liveInstancesMap.get(w.getType());
+        Holder refs = liveInstancesMap.get(w.getType());
         //
         synchronized (refs) {
-            Object o = w.getOriginal();
             // Track the wrapped instance by using a WeakReference for the wrapper itself
-            refs.put(new ComparableWeakReference<Wrapper>(w, q), o);
+            refs.add(new ComparableWeakReference(w, q));
             // Record some allocation related information
             updateAllocations(w);
         }
     }
 
-
-    public double getAvergeContentSize(Map<Reference, Collection> instances) {
-        return getAverageCollectionContentSize(instances.values());
-    }
-
-    public long getSmallCollectionCount(DelegateTypes delegateTypes) {
-        Map liveInstances = liveInstancesMap.get(delegateTypes);
+    public long getAliveSmallCount(DelegateTypes delegateTypes) {
+        Holder liveInstances = liveInstancesMap.get(delegateTypes);
         synchronized (liveInstances) {
-            if (delegateTypes == DelegateTypes.HASHMAP || delegateTypes == DelegateTypes.LINKEDHASHMAP
-                    || delegateTypes == DelegateTypes.HASHTABLE
-                    || delegateTypes == DelegateTypes.CONCURRENTHASHMAP
-                    )
-                return getSmallMapCount(liveInstances.values());
+            SizeHelper sizeHelper = getSizeHelper(delegateTypes);
 
-            return getSmallCollectionCount(liveInstances.values());
+            return getSmallCount(liveInstances.values(), sizeHelper);
         }
     }
 
-    public long getSmallCollectionCount(Collection<?> instances) {
+    private SizeHelper getSizeHelper(DelegateTypes delegateTypes) {
+        return isMap(delegateTypes) ? mapSizer : collectionSizer;
+    }
+
+    private boolean isMap(DelegateTypes delegateTypes) {
+        return delegateTypes == DelegateTypes.HASHMAP || delegateTypes == DelegateTypes.LINKEDHASHMAP
+                || delegateTypes == DelegateTypes.HASHTABLE
+                || delegateTypes == DelegateTypes.CONCURRENTHASHMAP;
+    }
+
+    public long getSmallCount(Iterable<ComparableWeakReference> instances, SizeHelper sizeHelper) {
         long count = 0;
         //
-        for (Object o : instances) {
-            Collection collection = (Collection) o;
-            if (collection.size() < threshold)
+        for (ComparableWeakReference r : instances) {
+            if (sizeHelper.size(r.o) < threshold)
                 count++;
         }
         //
         return count;
     }
 
-    public long getSmallMapCount(Collection<?> instances) {
-        long count = 0;
-        //
-        for (Object o : instances) {
-            Map map = (Map) o;
-            if (map.size() < threshold)
-                count++;
+    public double getAverageContentSize(DelegateTypes delegateTypes) {
+        Holder liveInstances = liveInstancesMap.get(delegateTypes);
+        synchronized (liveInstances) {
+            SizeHelper sizeHelper = getSizeHelper(delegateTypes);
+
+            return getAverageContentSize(liveInstances.values(), sizeHelper);
         }
-        //
-        return count;
     }
 
-
-    public double getAverageCollectionContentSize(Collection<?> instances) {
+    public double getAverageContentSize(Iterable<ComparableWeakReference> instances, SizeHelper sizeHelper) {
         long sum = 0;
         long count = 0;
         //
-        for (Object o : instances) {
-            Collection collection = (Collection) o;
+        for (ComparableWeakReference r : instances) {
             count++;
-            sum += collection.size();
+            sum += sizeHelper.size(r.o);
         }
         //
         return sum * 1.0 / count;
     }
 
-    public double getAverageMapContentSize(Collection<?> instances) {
-        long sum = 0;
+    public double getStdDevContentSize(DelegateTypes delegateTypes) {
+        return getStdDevContentSize(delegateTypes, getAverageContentSize(delegateTypes));
+    }
+
+    public double getStdDevContentSize(DelegateTypes delegateTypes, double avg) {
+        Holder liveInstances = liveInstancesMap.get(delegateTypes);
+        synchronized (liveInstances) {
+            SizeHelper sizeHelper = getSizeHelper(delegateTypes);
+
+            return getStdDevContentSize(liveInstances.values(), avg, sizeHelper);
+        }
+    }
+
+    public double getStdDevContentSize(Iterable<ComparableWeakReference> instances, double avg, SizeHelper sizeHelper) {
+        double sum = 0;
         long count = 0;
         //
-        for (Object o : instances) {
-            Map map = (Map) o;
+        for (ComparableWeakReference r : instances) {
             count++;
-            sum += map.size();
+            int sz = sizeHelper.size(r.o);
+            double d = avg - sz;
+            sum += d * d;
         }
         //
-        return sum * 1.0 / count;
+        return Math.sqrt(sum / count);
     }
 
     public double getAliveAvergeCapacity(DelegateTypes delegateTypes) {
@@ -297,44 +296,52 @@ public class CollectionTracker {
     }
 
     protected void dumpAllAllocationInfo(DelegateTypes delegateTypes) {
-        dumpInfo(allocationsMap.get(delegateTypes));
+        dumpInfo(merge(groupLive(liveInstancesMap.get(delegateTypes)), allocationsMap.get(delegateTypes)));
     }
 
 
-    public Map<Location, Info> groupLive(Map<Reference, ?> instances) {
-        List<Wrapper> wrappers = new LinkedList<Wrapper>();
-        // Collect
-        for (Map.Entry<Reference, ?> referenceCollectionEntry : instances.entrySet()) {
-            Wrapper wrapper = (Wrapper) referenceCollectionEntry.getKey().get();
-            if (wrapper != null) { // can have died in the meanwhile
-                wrappers.add(wrapper);
+    public Map<Location, Info> merge(Map<Location, Info> a, Map<Location, Info> b) {
+        // First a
+        for (Map.Entry<Location, Info> entry : a.entrySet()) {
+            Info aInfo = entry.getValue();
+            Info bInfo = b.get(entry.getKey());
+            //
+            merge(aInfo, bInfo);
+        }
+
+        // Look for b entries not in a
+        for (Map.Entry<Location, Info> entry : b.entrySet()) {
+            Info aInfo = b.get(entry.getKey());
+            if (aInfo == null) {
+                a.put(entry.getKey(), entry.getValue());
             }
         }
 
-        //
+        return a;
+    }
+
+    static void merge(Info res, Info a) {
+        res.merge(a);
+    }
+
+    public Map<Location, Info> groupLive(Holder instances) {
         Map<Location, Info> grouped = new TreeMap<Location, Info>();
-        for (Wrapper wrapper : wrappers) {
-            Location creation = wrapper.getCreation();
-            Info info = grouped.get(creation);
-            if (info == null) {
-                info = new Info(creation);
-                grouped.put(creation, info);
+        // Collect
+        for (ComparableWeakReference referenceCollectionEntry : instances) {
+            Wrapper wrapper = referenceCollectionEntry.get();
+            if (wrapper != null) { // can have died in the meanwhile
+                Info info = getOrCreateInfo(wrapper, grouped);
+                //
+                info.add(wrapper.size());
             }
-            //
-            info.count++;
-            info.total += wrapper.size();
         }
 
         //
         return grouped;
     }
 
-    public void dumpLiveAllocationInfo(Map<Reference, ?> instances) {
+    public void dumpLiveAllocationInfo(Holder instances) {
         dumpInfo(groupLive(instances));
-    }
-
-    private void dumpInfo(DelegateTypes delegateTypes) {
-        dumpInfo(allocationsMap.get(delegateTypes));
     }
 
     private void dumpInfo(Map<Location, Info> grouped) {
@@ -348,7 +355,8 @@ public class CollectionTracker {
         }
         for (Info info : sorted) {
             if (info.count > 0) {
-                log(String.format("%.1f%% of instances ", (100.0 * info.count) / sum) + "count:" + info.count + " avg. sz:" + info.total * 1.0 / info.count + " created at :\n"
+                log(String.format("%.1f%% of instances ", (100.0 * info.count) / sum) + " count:" + nf.format(info.count) + " avg. sz:"
+                        + " " + nf.format(info.totalSize * 1.0 / info.count) + " created at :\n"
                         + info.location);
             }
         }
@@ -362,16 +370,19 @@ public class CollectionTracker {
      */
     void updateAllocations(Wrapper wrapper) {
         Map<Location, Info> allAllocations = allocationsMap.get(wrapper.getType());
-        synchronized (allAllocations) {
-            Location creation = wrapper.getCreation();
-            Info info = allAllocations.get(creation);
-            if (info == null) {
-                info = new Info(creation);
-                allAllocations.put(creation, info);
-            }
-            //
-            info.count++;
+        Info info = getOrCreateInfo(wrapper, allAllocations);
+        //
+        info.count++;
+    }
+
+    private Info getOrCreateInfo(Wrapper wrapper, Map<Location, Info> all) {
+        Location creation = wrapper.getCreation();
+        Info info = all.get(creation);
+        if (info == null) {
+            info = new Info(creation);
+            all.put(creation, info);
         }
+        return info;
     }
 
 
@@ -458,7 +469,7 @@ public class CollectionTracker {
         List<Map.Entry<String, Info>> all = new LinkedList<Map.Entry<String, Info>>(byOwner.entrySet());
         Collections.sort(all, new Comparator<Map.Entry<String, Info>>() {
             public int compare(Map.Entry<String, Info> o1, Map.Entry<String, Info> o2) {
-                return o2.getValue().count - o1.getValue().count;
+                return (int) (o2.getValue().count - o1.getValue().count);
             }
         });
         //
@@ -474,7 +485,10 @@ public class CollectionTracker {
             Info info = e.getValue();
             count++;
             float percentage = (100.0f * info.count) / sum;
-            log(String.format("%d %.1f%% of instances ", count, percentage) + e.getKey() + "count:" + info.count + " avg. sz:" + info.total * 1.0 / info.count + " created at :\n"
+            double avg = info.totalSize * 1.0 / info.count;
+            log(String.format("%d %.1f%% of instances ", count, percentage) + e.getKey() + " count:" + nf.format(info.count)
+                    + " avg. sz:" + nf.format(avg) + (avg < 2.0 ? " (-!-)" : "")
+                    + " created at :\n"
                     + e.getKey());
             //
             cumulate += percentage;
@@ -503,7 +517,7 @@ public class CollectionTracker {
             }
             Info tmp = entry.getValue();
             info.count += tmp.count;
-            info.total += tmp.total;
+            info.totalSize += tmp.totalSize;
         }
         //
         return byOwner;
@@ -515,12 +529,18 @@ public class CollectionTracker {
      *
      * @param delegateTypes
      * @param tracked
+     * @param location
      */
-    public void updateDeadStatistics(DelegateTypes delegateTypes, Object tracked) {
+    public void updateDeadStatistics(DelegateTypes delegateTypes, Object tracked, Location location) {
         Statistics statistics = deadStatistics.get(delegateTypes);
+        Map<Location, Info> a = allocationsMap.get(delegateTypes);
         //
+        SizeHelper sizeHelper = getSizeHelper(delegateTypes);
+
         long capacity = -1;
-        long size = -1;
+        long size = sizeHelper.size(tracked);
+
+/*
         switch (delegateTypes) {
             case HASHTABLE:
                 Hashtable ht = (Hashtable) tracked;
@@ -574,24 +594,19 @@ public class CollectionTracker {
             default:
                 throw new IllegalStateException(delegateTypes.name());
         }
+*/
         //
         update(capacity, size, statistics);
+        a.get(location).add(size);
     }
 
     public void update(long capacity, long sz, Statistics s) {
-//            AtomicLong allocations, AtomicLong totalSize, AtomicLong totalContentSize, AtomicLong largestSize, AtomicLong smallInstanceCount) {
         //
         if (sz < threshold)
             s.smallInstances++;
 
-        s.count++;
-        if (capacity == 0)
-            return;
-
-        s.totalSize += capacity;
-        s.totalCapacity += sz;
-        //
-        s.largestSize = Math.max(sz, s.largestSize);
+        s.add(sz);
+        s.totalCapacity += capacity;
     }
 
     private void max(long sz, AtomicLong largestSize) {
@@ -614,35 +629,18 @@ public class CollectionTracker {
     }
 
     public long getLargestSizeAlive(DelegateTypes delegateTypes) {
-        Map liveInstances = liveInstancesMap.get(delegateTypes);
+        Holder liveInstances = liveInstancesMap.get(delegateTypes);
         synchronized (liveInstances) {
-            if (delegateTypes == DelegateTypes.HASHMAP || delegateTypes == DelegateTypes.LINKEDHASHMAP
-                    || delegateTypes == DelegateTypes.HASHTABLE
-                    || delegateTypes == DelegateTypes.CONCURRENTHASHMAP
-                    )
-                return getLargestMapSize(liveInstances.values());
-
-            return getLargestSize(liveInstances.values());
+            SizeHelper sizeHelper = getSizeHelper(delegateTypes);
+            return getLargestSize(liveInstances.values(), sizeHelper);
         }
     }
 
-    public long getLargestSize(Collection<?> instances) {
+    public long getLargestSize(Iterable<ComparableWeakReference> instances, SizeHelper sizeHelper) {
         long max = 0;
         //
-        for (Object o : instances) {
-            Collection collection = (Collection) o;
-            max = Math.max(max, collection.size());
-        }
-        //
-        return max;
-    }
-
-    public long getLargestMapSize(Collection<?> instances) {
-        long max = 0;
-        //
-        for (Object o : instances) {
-            Map map = (Map) o;
-            max = Math.max(max, map.size());
+        for (ComparableWeakReference o : instances) {
+            max = Math.max(max, sizeHelper.size(o.o));
         }
         //
         return max;
@@ -671,16 +669,25 @@ public class CollectionTracker {
         if (state == State.DEAD)
             return deadStatistics.get(delegateTypes).smallInstances;
 
-        return getSmallCollectionCount(delegateTypes);
+        return getAliveSmallCount(delegateTypes);
     }
+
+    private double getDeadAverage(DelegateTypes delegateTypes) {
+        return getTotalSize(delegateTypes) * 1.0 / getCount(delegateTypes);
+    }
+
+    private double getDeadAverageContent(DelegateTypes delegateTypes) {
+        return getTotalContentSize(delegateTypes) * 1.0 / getCount(delegateTypes);
+    }
+
 
     public double getAverageSize(DelegateTypes delegateTypes, State state) {
         if (state == State.DEAD) {
             Statistics statistics = deadStatistics.get(delegateTypes);
-            return (statistics.totalSize * 1.0) / statistics.count;
+            return statistics.averageSize;
         }
 
-        return getAliveAvergeCapacity(delegateTypes);
+        return getAverageContentSize(delegateTypes);
     }
 
     public double getAverageCapacity(DelegateTypes delegateTypes, State state) {
@@ -693,23 +700,29 @@ public class CollectionTracker {
     }
 
     public long getSmallCollectionContentSize(DelegateTypes delegateTypes, State state) {
-        if (state == State.DEAD) {
-            return deadStatistics.get(delegateTypes).smallInstances;
-        }
-
-        return getSmallCollectionCount(delegateTypes);
+        return getSmallCount(delegateTypes, state);
     }
 
     public String getSizeDistribution(DelegateTypes type, State state) {
         long small = getSmallCount(type, state);
         long count = getCount(type, state);
-        return small + "/" + (count - small) + percentage(small, count) + " (SMALL/NOT SMALL)";
+        return format(small) + "/" + format(count - small) + percentage(small, count) + " (SMALL/NOT SMALL)";
     }
 
     public String getStateDistribution(DelegateTypes type) {
         long alive = getCount(type, ALIVE);
         long dead = getCount(type, DEAD);
-        return alive + "/" + dead + percentageParts(alive, dead) + " (ALIVE/DEAD)";
+        return format(alive) + "/" + format(dead) + percentageParts(alive, dead) + " (ALIVE/DEAD)";
+    }
+
+    public String getAverageDistribution(DelegateTypes type) {
+        double alive = getAverageSize(type, ALIVE);
+        double dead = getAverageSize(type, DEAD);
+        return String.format("%.2f+-%.2f/%.2f+-%.2f (ALIVE/DEAD)", alive, getStdDevContentSize(type), dead, getDeadStdDevContentSize(type));
+    }
+
+    private double getDeadStdDevContentSize(DelegateTypes type) {
+        return Math.sqrt(deadStatistics.get(type).varianceSize);
     }
 
 
@@ -740,23 +753,169 @@ public class CollectionTracker {
     public String getLargestSizeDistribution(DelegateTypes type) {
         long alive = getLargestSize(type, ALIVE);
         long dead = getLargestSize(type, DEAD);
-        return alive + "/" + dead + " (ALIVE/DEAD)";
+        return format(alive) + "/" + format(dead) + " (ALIVE/DEAD)";
     }
 
-    static class ComparableWeakReference<T> extends WeakReference<T> implements Comparable<ComparableWeakReference<T>> {
-        final int id = System.identityHashCode(this);
+    private String format(double dead) {
+        return nf.format(dead);
+    }
 
-        ComparableWeakReference(T referent) {
+    private String format(long dead) {
+        return nf.format(dead);
+    }
+
+    /**
+     * Stores the Location and the tracked object reference for faster access
+     * later on.
+     * <p/>
+     * Use 2 refs to impl. a double linked list
+     */
+    static class ComparableWeakReference extends WeakReference<Wrapper> {
+        ComparableWeakReference left;  // prev and next are used by Reference
+        ComparableWeakReference right; // so other names
+        final Location location;
+        //
+        Object o;
+
+        ComparableWeakReference(Wrapper referent) {
             super(referent);
+            location = referent.getCreation();
         }
 
-        ComparableWeakReference(T referent, ReferenceQueue<? super T> q) {
+        ComparableWeakReference(Wrapper referent, ReferenceQueue<? super Wrapper> q) {
             super(referent, q);
+            location = referent.getCreation();
+            this.o = referent.getOriginal();
         }
 
-        public int compareTo(ComparableWeakReference<T> o) {
-            int d = o.id - id;
-            return d > 0 ? 1 : d < 0 ? -1 : 0;
+        void remove() {
+            ComparableWeakReference l;
+            l = left;
+            if (l != null) {
+                left.right = right;
+            }
+            //
+            l = right;
+            if (l != null) {
+                right.left = left;
+            }
+
+            // Null-ing refs is supposedly not helping GC
+            // but just in case
+            left = null;
+            right = null;
+        }
+
+        @Override
+        public String toString() {
+            return "ComparableWeakReference{" +
+                    "left=" + left +
+                    ", right=" + right +
+                    ", location=" + location +
+                    ", o=" + o +
+                    '}';
         }
     }
+
+    /**
+     * Basic structure to hold the first link of the double linked list. Provides a few
+     * functionalities add() and remove()
+     */
+    static class Holder implements Iterable<ComparableWeakReference> {
+        ComparableWeakReference head;
+        final String name;
+        int count = 0;
+
+        public Holder(String name) {
+            this.name = name;
+        }
+
+        public void add(ComparableWeakReference c) {
+            if (head != null) {
+                // Link in front of head
+                head.left = c;
+                c.right = head;
+            }
+
+            head = c;
+            count++;
+        }
+
+        public Object remove(ComparableWeakReference c) {
+            ComparableWeakReference newHead = null;
+            if (head == c) {
+                newHead = c.right;
+            }
+
+            c.remove();
+
+            if (newHead != null)
+                head = newHead;
+
+            count--;
+
+            return c.o;
+        }
+
+        public Iterator<ComparableWeakReference> iterator() {
+            final ComparableWeakReference tmp = head;
+
+            return new Iterator<ComparableWeakReference>() {
+                ComparableWeakReference l = tmp;
+
+                public boolean hasNext() {
+                    return l != null && l.right != null;
+                }
+
+                public ComparableWeakReference next() {
+                    ComparableWeakReference e = l;
+                    l = l.right;
+                    return e;
+                }
+
+                public void remove() {
+                }
+            };
+        }
+
+        Iterable values() {
+            return this;
+        }
+
+        public int size() {
+            return count;
+        }
+
+        public void clear() {
+            count = 0;
+            head = null;
+        }
+
+        @Override
+        public String toString() {
+            return "Holder{" +
+                    "head=" + head +
+                    ", name='" + name + '\'' +
+                    ", count=" + count +
+                    '}';
+        }
+    }
+
+    static interface SizeHelper {
+        int size(Object o);
+
+    }
+
+    static final SizeHelper mapSizer = new SizeHelper() {
+        public int size(Object o) {
+            return ((Map) o).size();
+        }
+    };
+
+    static final SizeHelper collectionSizer = new SizeHelper() {
+        public int size(Object o) {
+            return ((Collection) o).size();
+        }
+    };
+
 }

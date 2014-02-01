@@ -34,7 +34,7 @@ The Pareto principle (sometimes referred to as 80/20 principle) point out that i
 
 The JDK's collection API is an important aspect of Java's success. The platform provides a standard (the API) and
 efficient implementations to help the programmer get started. Yet, as described in the second link above, when one
-stores no or only one value using the standard collection classes the overhead in term of memory can be high (relatively
+stores no or only one value using the standard collection classes the overhead in terms of memory can be high (relatively
 speaking). See the slides for a much better explanation.
 
 Now combine this with the Pareto principle and then the question becomes: are Java programs, or parts of it,
@@ -145,7 +145,7 @@ data. This means that it avoids the overhead of 16 bytes + type_size * default_a
 
 Here too JMX is used to provide some run-time statistics. This allows to validate whether the Pareto Collections are
 used correctly. If the statistics show that most of the instance exceed the 1 element per instance threshold one should
- rather use the JDK implmentation instead.
+ rather use the JDK implementation instead.
 
 
 

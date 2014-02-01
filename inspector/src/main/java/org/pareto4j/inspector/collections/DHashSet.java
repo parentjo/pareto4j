@@ -33,7 +33,7 @@ public class DHashSet<E> extends HashSet<E> implements Wrapper {
     public static final DelegateTypes TYPES = DelegateTypes.HASHSET;
 
     HashSet<E> d;
-    public final Location creation = new Location(new Where());
+    public final Location creation = Location.create(new Where());
 
     public DHashSet() {
         super(1);

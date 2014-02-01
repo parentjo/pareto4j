@@ -33,7 +33,7 @@ public class DHashMap extends HashMap implements Wrapper {
     public static final DelegateTypes TYPES = DelegateTypes.HASHMAP;
 
     HashMap hashMap;
-    public final Location creation = new Location(new Where());
+    public final Location creation = Location.create(new Where());
 
     public DHashMap() {
         super(1);

@@ -32,7 +32,7 @@ public class DLinkedHashMap extends LinkedHashMap implements Wrapper {
     public static final DelegateTypes TYPES = DelegateTypes.LINKEDHASHMAP;
 
     MyLHM linkedHashMap;
-    public final Location creation = new Location(new Where());
+    public final Location creation = Location.create(new Where());
 
     private static class MyLHM extends LinkedHashMap {
         private MyLHM(int initialCapacity, float loadFactor) {

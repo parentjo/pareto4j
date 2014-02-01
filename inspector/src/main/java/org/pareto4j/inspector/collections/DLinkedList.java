@@ -28,7 +28,7 @@ import java.util.*;
 public class DLinkedList<E> extends LinkedList<E> implements Wrapper<LinkedList> {
     public static final DelegateTypes TYPE = DelegateTypes.LINKEDLIST;
     MyLL<E> d;
-    public final Location creation = new Location(new Where());
+    public final Location creation = Location.create(new Where());
 
     static class MyLL<E> extends LinkedList<E> {
         MyLL() {

@@ -31,7 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class DConcurrentHashMap extends ConcurrentHashMap implements Wrapper {
     public static final DelegateTypes TYPES = DelegateTypes.CONCURRENTHASHMAP;
-    public final Location creation = new Location(new Where());
+    public final Location creation = Location.create(new Where());
 
     ConcurrentHashMap d;
 

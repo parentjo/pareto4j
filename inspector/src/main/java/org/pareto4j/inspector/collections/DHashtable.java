@@ -28,7 +28,7 @@ import java.util.*;
  */
 public class DHashtable<K,V> extends Hashtable<K,V> implements Wrapper  {
     public static final DelegateTypes TYPES = DelegateTypes.HASHTABLE;
-    public final Location creation = new Location(new Where());
+    public final Location creation = Location.create(new Where());
 
     Hashtable d;
 

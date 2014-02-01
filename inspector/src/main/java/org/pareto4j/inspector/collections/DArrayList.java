@@ -29,7 +29,7 @@ import java.util.*;
 public class DArrayList<E> extends ArrayList<E> implements List<E>, Wrapper<ArrayList<E>> {
     public static final DelegateTypes TYPE = DelegateTypes.ARRAYLIST;
     MyAL<E> d = new MyAL<E>();
-    public final Location creation = new Location(new Where());
+    public final Location creation = Location.create(new Where());
 
     static class MyAL<E> extends ArrayList<E> {
         public MyAL(int initialCapacity) {

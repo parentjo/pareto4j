@@ -31,7 +31,7 @@ public class DLinkedHashSet<E> extends LinkedHashSet<E> implements Wrapper {
     public static final DelegateTypes TYPES = DelegateTypes.LINKEDHASHSET;
 
     LinkedHashSet<E> d;
-    public final Location creation = new Location(new Where());
+    public final Location creation = Location.create(new Where());
 
     public DLinkedHashSet() {
         d = new LinkedHashSet<E>();

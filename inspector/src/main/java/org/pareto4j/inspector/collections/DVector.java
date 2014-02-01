@@ -28,7 +28,7 @@ import java.util.*;
  */
 public class DVector<E> extends Vector<E> implements Wrapper {
     public static final DelegateTypes TYPES = DelegateTypes.VECTOR;
-    public final Location creation = new Location(new Where());
+    public final Location creation = Location.create(new Where());
 
     MyV<E> d;
 
